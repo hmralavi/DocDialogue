@@ -1,24 +1,48 @@
+from llm_model import mymodel
+
 import streamlit as st
 
+import os
+from dotenv import load_dotenv
 
-def main():
-    st.title("Chat with a Large Language Model")
+load_dotenv()
 
-    # Text input box for user input
-    user_input = st.text_input("You:", "")
+print(os.environ["HF_API_KEY"])
 
-    # Check if user has entered any input
-    if user_input:
-        # Generate response from the model based on user input
-        response = generate_response(user_input)
-        st.text_area("LLM:", value=response, height=150, max_chars=None)
+st.title("DocDialogue: Chat with you document!🤖")
 
-
-def generate_response(user_input):
-    # Generate response from the model
-    response = f"{user_input}:LLM response"
-    return response
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
 
-if __name__ == "__main__":
-    main()
+for message in st.session_state["messages"]:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# initialize model
+if "model" not in st.session_state:
+    st.session_state.model = "gpt-3.5-turbo"
+
+# user input
+if user_prompt := st.chat_input("Your prompt"):
+    st.session_state.messages.append({"role": "user", "content": user_prompt})
+    with st.chat_message("user"):
+        st.markdown(user_prompt)
+
+    # generate responses
+    with st.chat_message("assistant"):
+        message_placeholder = st.empty()
+        full_response = ""
+
+        for response in mymodel(
+            model=st.session_state.model,
+            messages=[{"role": m["role"], "content": m["content"]} for m in st.session_state.messages],
+            stream=True,
+        ):
+            # full_response += response.choices[0].delta.get("content", "")
+            full_response += response
+            message_placeholder.markdown(full_response + "▌")
+
+        message_placeholder.markdown(full_response)
+
+    st.session_state.messages.append({"role": "assistant", "content": full_response})
