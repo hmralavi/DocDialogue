@@ -52,7 +52,7 @@ def run_embedding():
     loader = PyPDFLoader(st.session_state.doc_path)
     documents = loader.load()
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=32)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=100)
     texts = text_splitter.split_documents(documents)
 
     embedding_model = HuggingFaceInferenceAPIEmbeddings(
