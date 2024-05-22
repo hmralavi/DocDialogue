@@ -8,7 +8,7 @@ import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
-from langchain_community.vectorstores import Chroma
+from langchain_community.vectorstores import FAISS
 
 
 def generate_random_folder_name():
@@ -52,20 +52,16 @@ def run_embedding():
     loader = PyPDFLoader(st.session_state.doc_path)
     documents = loader.load()
 
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=128, chunk_overlap=32)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=32)
     texts = text_splitter.split_documents(documents)
 
     embedding_model = HuggingFaceInferenceAPIEmbeddings(
         api_key=os.environ["HF_API_KEY"], model_name="sentence-transformers/all-MiniLM-l6-v2"
     )
 
-    vectordb = Chroma.from_documents(
+    vectordb = FAISS.from_documents(
         documents=texts,
         embedding=embedding_model,
-        persist_directory=os.path.join(
-            st.session_state.tmp_folder,
-            "chroma",
-        ),
     )
 
     st.session_state.vectordb = vectordb
