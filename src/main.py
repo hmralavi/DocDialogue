@@ -8,7 +8,7 @@ import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
-from langchain_community.vectorstores import FAISS
+from langchain_chroma import Chroma
 
 
 def generate_random_folder_name():
@@ -56,10 +56,11 @@ def run_embedding():
     texts = text_splitter.split_documents(documents)
 
     embedding_model = HuggingFaceInferenceAPIEmbeddings(
-        api_key=os.environ["HF_API_KEY"], model_name="sentence-transformers/all-MiniLM-l6-v2"
+        api_key=os.environ["HF_API_KEY"],
+        model_name="sentence-transformers/all-MiniLM-l6-v2",
     )
 
-    vectordb = FAISS.from_documents(
+    vectordb = Chroma.from_documents(
         documents=texts,
         embedding=embedding_model,
     )
@@ -91,20 +92,20 @@ def insert_ai_message(msg: str):
     def msg_generator():
         for c in msg:
             yield c
-            time.sleep(0.01)
+            # time.sleep(0.01)
 
     # generate responses
     with st.chat_message("AI"):
         message_placeholder = st.empty()
         full_response = ""
+        st.session_state.messages.append({"role": "AI", "content": full_response})
 
         for response in msg_generator():
             full_response += response
             message_placeholder.markdown(full_response + "▌")
+            st.session_state.messages[-1]["content"] = full_response
 
         message_placeholder.markdown(full_response)
-
-    st.session_state.messages.append({"role": "AI", "content": full_response})
 
 
 def display_messages():
