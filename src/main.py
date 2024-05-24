@@ -1,14 +1,21 @@
-import os
-from dotenv import load_dotenv
-import time
-import random
-import shutil
-
 import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from langchain_chroma import Chroma
+
+import os
+import time
+import random
+import shutil
+from dotenv import load_dotenv
+
+AI_MSG_TAG = "assistant"
+USER_MSG_TAG = "user"
+
+
+def msg_dict(role: str, content: str):
+    return {"role": role, "content": content}
 
 
 def generate_random_folder_name():
@@ -68,57 +75,22 @@ def run_embedding():
     st.session_state.vectordb = vectordb
 
 
-def retrieve_ai_response():
-    # generate responses
-    with st.chat_message("AI"):
-        message_placeholder = st.empty()
-        full_response = ""
-
-        for response in mymodel(
-            model=st.session_state.model,
-            messages=[{"role": m["role"], "content": m["content"]} for m in st.session_state.messages],
-            stream=True,
-        ):
-            # full_response += response.choices[0].delta.get("content", "")
-            full_response += response
-            message_placeholder.markdown(full_response + "▌")
-
-        message_placeholder.markdown(full_response)
-
-    st.session_state.messages.append({"role": "AI", "content": full_response})
+def insert_message(role: str, msg: str, display=True):
+    st.session_state.messages.append(msg_dict(role, msg))
+    if display:
+        with st.chat_message(role):
+            st.markdown(msg)
 
 
-def insert_ai_message(msg: str):
-    def msg_generator():
-        for c in msg:
-            yield c
-            # time.sleep(0.01)
-
-    # generate responses
-    with st.chat_message("AI"):
-        message_placeholder = st.empty()
-        full_response = ""
-        st.session_state.messages.append({"role": "AI", "content": full_response})
-
-        for response in msg_generator():
-            full_response += response
-            message_placeholder.markdown(full_response + "▌")
-            st.session_state.messages[-1]["content"] = full_response
-
-        message_placeholder.markdown(full_response)
-
-
-def display_messages():
-    for message in st.session_state["messages"]:
+def display_all_messages():
+    for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
 
 def get_user_prompt():
     if user_prompt := st.chat_input("Your prompt"):
-        st.session_state.messages.append({"role": "user", "content": user_prompt})
-        with st.chat_message("user"):
-            st.markdown(user_prompt)
+        insert_message(USER_MSG_TAG, user_prompt)
         return user_prompt
     return None
 
@@ -143,11 +115,10 @@ def main():
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
-        st.session_state.messages.append(
-            {
-                "role": "AI",
-                "content": "Hello, this is your AI assistant. I will answer questions about your document.",
-            }
+        insert_message(
+            AI_MSG_TAG,
+            "Hello, this is your AI assistant. I will answer questions about your document.",
+            False,
         )
 
     if "tmp_folder" not in st.session_state:
@@ -157,7 +128,7 @@ def main():
     if "vectordb" not in st.session_state:
         run_embedding()
 
-    display_messages()
+    display_all_messages()
 
     prompt = get_user_prompt()
 
@@ -165,7 +136,7 @@ def main():
         similar_splits = st.session_state.vectordb.similarity_search(prompt, k=5)
         response = "Top 5 relative splits:\n\n"
         response += "\n\n".join([f"{i+1}. {sp.page_content}" for i, sp in enumerate(similar_splits)])
-        insert_ai_message(response)
+        insert_message(AI_MSG_TAG, response)
 
 
 if __name__ == "__main__":
