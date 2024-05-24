@@ -1,8 +1,18 @@
+"""
+TODO: option for using different llm models
+TODO: implementing chat history https://python.langchain.com/v0.2/docs/tutorials/qa_chat_history/
+"""
+
 import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from langchain_chroma import Chroma
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.prompts import PromptTemplate
+from langchain_huggingface.llms import HuggingFaceEndpoint
+from langchain_core.output_parsers import StrOutputParser
+from langchain import hub
 
 import os
 import time
@@ -12,6 +22,8 @@ from dotenv import load_dotenv
 
 AI_MSG_TAG = "assistant"
 USER_MSG_TAG = "user"
+
+load_dotenv()
 
 
 def msg_dict(role: str, content: str):
@@ -55,7 +67,7 @@ def run_upload():
     st.button("Let's Go!", on_click=upload_clicked)
 
 
-def run_embedding():
+def get_retriever():
     loader = PyPDFLoader(st.session_state.doc_path)
     documents = loader.load()
 
@@ -70,9 +82,10 @@ def run_embedding():
     vectordb = Chroma.from_documents(
         documents=texts,
         embedding=embedding_model,
+        persist_directory=os.path.join(st.session_state.tmp_folder, "chroma"),
     )
 
-    st.session_state.vectordb = vectordb
+    return vectordb.as_retriever(search_type="similarity", search_kwargs={"k": 3})
 
 
 def insert_message(role: str, msg: str, display=True):
@@ -80,6 +93,21 @@ def insert_message(role: str, msg: str, display=True):
     if display:
         with st.chat_message(role):
             st.markdown(msg)
+
+
+def insert_message_stream(stream):
+    with st.chat_message(AI_MSG_TAG):
+        message_placeholder = st.empty()
+        full_response = ""
+        st.session_state.messages.append(msg_dict(AI_MSG_TAG, full_response))
+
+        for response in stream:
+            full_response += response
+            st.session_state.messages[-1]["content"] = full_response
+            message_placeholder.markdown(full_response + "▌")
+
+        st.session_state.messages[-1]["content"] = full_response
+        message_placeholder.markdown(full_response)
 
 
 def display_all_messages():
@@ -95,9 +123,51 @@ def get_user_prompt():
     return None
 
 
-def main():
-    load_dotenv()
+def merge_splits(splits):
+    return "\n\n".join(f"{i}.{s.page_content}" for i, s in enumerate(splits))
 
+
+def get_chain():
+    rag_chain = (
+        {"context": get_retriever() | merge_splits, "question": RunnablePassthrough()}
+        | get_prompt_template()
+        | get_llm()
+        | StrOutputParser()
+    )
+    return rag_chain
+
+
+def get_llm():
+    llm = HuggingFaceEndpoint(
+        # repo_id="meta-llama/Meta-Llama-3-8B-Instruct",
+        repo_id="mistralai/Mistral-7B-Instruct-v0.3",
+        huggingfacehub_api_token=os.environ["HF_API_KEY"],
+        task="text-generation",
+        streaming=True,
+        # temperature=0.9,
+        # max_new_tokens=512,
+        # top_p=0.95,
+        # repetition_penalty=1.0,
+    )
+    return llm
+
+
+def get_prompt_template():
+    return hub.pull("rlm/rag-prompt")
+
+    tmp = """
+    [INST] You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise. [/INST]
+
+    [USER] Question: {question} [/USER]
+
+    [META] Context: {context} [/META]
+
+    [ASSISTANT] Answer:
+    """
+    return PromptTemplate(template=tmp, input_variables=["question", "context"])
+
+
+def main():
     cleanup_tmp_folder()
 
     # Set the page configuration
@@ -113,6 +183,13 @@ def main():
         unsafe_allow_html=True,
     )
 
+    if "tmp_folder" not in st.session_state:
+        run_upload()
+        return
+
+    if "rag_chain" not in st.session_state:
+        st.session_state.rag_chain = get_chain()
+
     if "messages" not in st.session_state:
         st.session_state.messages = []
         insert_message(
@@ -121,22 +198,13 @@ def main():
             False,
         )
 
-    if "tmp_folder" not in st.session_state:
-        run_upload()
-        return
-
-    if "vectordb" not in st.session_state:
-        run_embedding()
-
     display_all_messages()
 
     prompt = get_user_prompt()
 
     if prompt:
-        similar_splits = st.session_state.vectordb.similarity_search(prompt, k=5)
-        response = "Top 5 relative splits:\n\n"
-        response += "\n\n".join([f"{i+1}. {sp.page_content}" for i, sp in enumerate(similar_splits)])
-        insert_message(AI_MSG_TAG, response)
+        response_stream = st.session_state.rag_chain.stream(prompt)
+        insert_message_stream(response_stream)
 
 
 if __name__ == "__main__":
