@@ -101,7 +101,7 @@ def insert_message(role: str, msg: str, display=True):
     st.session_state.messages.append(msg_dict(role, msg))
     if display:
         with st.chat_message(role):
-            st.markdown(msg)
+            st.markdown(stylized_msg(role, msg), unsafe_allow_html=True)
 
 
 def insert_message_stream(stream):
@@ -113,16 +113,20 @@ def insert_message_stream(stream):
         for response in stream:
             full_response += response
             st.session_state.messages[-1]["content"] = full_response
-            message_placeholder.markdown(full_response + "▌")
+            message_placeholder.markdown(stylized_msg(AI_MSG_TAG, full_response + "▌"), unsafe_allow_html=True)
 
         st.session_state.messages[-1]["content"] = full_response
-        message_placeholder.markdown(full_response)
+        message_placeholder.markdown(stylized_msg(AI_MSG_TAG, full_response), unsafe_allow_html=True)
+
+
+def stylized_msg(role: str, msg: str):
+    return f"""<div class="message-{role}">{msg}</div>"""
 
 
 def display_all_messages():
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+            st.markdown(stylized_msg(message["role"], message["content"]), unsafe_allow_html=True)
 
 
 def get_user_prompt():
@@ -189,6 +193,29 @@ def main():
     st.markdown(
         """<span style='font-size: 48px;font-weight: bold;'>🤖 DocDialogue</span>
         <span style='font-size: 20px;font-weight: normal;margin-left: 10px;'>Chat with your document!</span>""",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        """
+        <style>
+        .stChatMessage {
+            background-color: transparent;
+        }
+        .message-assistant {
+            background-color: rgba(217, 167, 0, 0.3);
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        .message-user {
+            background-color: rgba(150, 150, 150, 0.3);
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        </style>
+        """,
         unsafe_allow_html=True,
     )
 
