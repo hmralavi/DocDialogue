@@ -3,6 +3,15 @@ TODO: option for using different llm models
 TODO: implementing chat history https://python.langchain.com/v0.2/docs/tutorials/qa_chat_history/
 """
 
+try:
+    __import__("pysqlite3")
+    import pysqlite3
+    import sys
+
+    sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+except:
+    pass
+
 import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
