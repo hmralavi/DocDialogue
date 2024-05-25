@@ -4,6 +4,5 @@ langchain
 langchain_community
 langchain-chroma
 langchain-huggingface
-langchainhub
 python-dotenv
 pypdf

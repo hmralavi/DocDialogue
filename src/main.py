@@ -18,10 +18,9 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.runnables import RunnablePassthrough
-from langchain_core.prompts import PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
 from langchain_huggingface.llms import HuggingFaceEndpoint
 from langchain_core.output_parsers import StrOutputParser
-from langchain import hub
 
 import os
 import time
@@ -166,18 +165,40 @@ def get_llm():
 
 
 def get_prompt_template():
-    return hub.pull("rlm/rag-prompt")
+    prompt1 = ChatPromptTemplate.from_messages(
+        [
+            (
+                "human",
+                """You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.
+                Question: {question}
+                Context: {context}
+                Answer:""",
+            )
+        ]
+    )
 
-    tmp = """
-    [INST] You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise. [/INST]
+    prompt2 = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.",
+            ),
+            (
+                "human",
+                "Question: {question} \n Context: {context} \n Answer:",
+            ),
+            ("ai", "Answer:"),
+        ]
+    )
 
-    [USER] Question: {question} [/USER]
+    prompt3 = PromptTemplate.from_template(
+        """You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.
+        Question: {question}
+        Context: {context}
+        Answer:"""
+    )
 
-    [META] Context: {context} [/META]
-
-    [ASSISTANT] Answer:
-    """
-    return PromptTemplate(template=tmp, input_variables=["question", "context"])
+    return prompt2
 
 
 def main():
