@@ -6,3 +6,4 @@ langchain-chroma
 langchain-huggingface
 python-dotenv
 pypdf
+beautifulsoup4

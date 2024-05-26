@@ -1,5 +1,6 @@
 """
 TODO: implementing chat history https://python.langchain.com/v0.2/docs/tutorials/qa_chat_history/
+TODO: improve web inputs. maybe using bs4 more properly?
 TODO: llama doesn't answer properly. maybe modify the prompt?
 """
 
@@ -13,7 +14,7 @@ except:
     pass
 
 import streamlit as st
-from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader, TextLoader, WebBaseLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from langchain_chroma import Chroma
@@ -63,28 +64,52 @@ def cleanup_tmp_folder():
         shutil.rmtree(os.path.join(tmp_path, fname))
 
 
-def run_upload():
-    uploaded_file = st.file_uploader("Upload a PDF file to start:", type="pdf")
-    if not uploaded_file:
+def get_user_doc():
+    if st.session_state.doc_type == "PDF":
+        pdf = st.file_uploader("Upload a PDF file to start:", type="pdf")
+        if not pdf:
+            return
+    elif st.session_state.doc_type == "Web URL":
+        url = st.text_input("Insert URL and apply:", placeholder="Insert URL")
+        if not url:
+            return
+    elif st.session_state.doc_type == "Text":
+        txt = st.text_area("Insert text and apply:", placeholder="Insert Text")
+        if not txt:
+            return
+    else:
         return
 
-    def upload_clicked():
+    def lets_go_clicked():
         tmp_folder = os.path.join("./tmp", generate_random_folder_name())
         os.makedirs(tmp_folder)
 
-        doc_path = os.path.join(tmp_folder, "doc.pdf")
-        with open(doc_path, "wb") as file:
-            file.write(uploaded_file.getvalue())
-            st.session_state.tmp_folder = tmp_folder
-            st.session_state.doc_path = doc_path
+        if st.session_state.doc_type == "PDF":
+            doc_path = os.path.join(tmp_folder, "doc.pdf")
+            with open(doc_path, "wb") as file:
+                file.write(pdf.getvalue())
+        elif st.session_state.doc_type == "Web URL":
+            doc_path = url
+        elif st.session_state.doc_type == "Text":
+            doc_path = os.path.join(tmp_folder, "doc.txt")
+            with open(doc_path, "w", encoding="utf-8") as file:
+                file.write(txt)
 
-    st.button("Let's Go!", on_click=upload_clicked)
+        st.session_state.tmp_folder = tmp_folder
+        st.session_state.doc_path = doc_path
+
+    st.button("Let's Go!", on_click=lets_go_clicked)
 
 
 def get_retriever():
-    loader = PyPDFLoader(st.session_state.doc_path)
-    documents = loader.load()
+    if st.session_state.doc_type == "PDF":
+        loader = PyPDFLoader(st.session_state.doc_path)
+    elif st.session_state.doc_type == "Web URL":
+        loader = WebBaseLoader(web_path=st.session_state.doc_path)
+    elif st.session_state.doc_type == "Text":
+        loader = TextLoader(st.session_state.doc_path, encoding="utf-8")
 
+    documents = loader.load()
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=700, chunk_overlap=100)
     texts = text_splitter.split_documents(documents)
 
@@ -256,7 +281,15 @@ def main():
     )
 
     if "tmp_folder" not in st.session_state:
-        run_upload()
+        # doc type option
+        st.selectbox(
+            "Document type:",
+            ["Select your document type", "PDF", "Web URL", "Text"],
+            index=0,
+            key="doc_type",
+        )
+        if st.session_state.doc_type != "Select your document type":
+            get_user_doc()
         return
 
     if "llm_model" not in st.session_state:
