@@ -1,6 +1,6 @@
 """
-TODO: option for using different llm models
 TODO: implementing chat history https://python.langchain.com/v0.2/docs/tutorials/qa_chat_history/
+TODO: llama doesn't answer properly. maybe modify the prompt?
 """
 
 try:
@@ -30,6 +30,12 @@ from dotenv import load_dotenv
 
 AI_MSG_TAG = "assistant"
 USER_MSG_TAG = "user"
+
+LLM_MODELS_REPO = {
+    "Mistral-7B-Instruct-v0.3": "mistralai/Mistral-7B-Instruct-v0.3",
+    "Meta-Llama-3-8B-Instruct": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "google/gemma-1.1-7b-it": "google/gemma-1.1-7b-it",
+}
 
 load_dotenv()
 
@@ -140,9 +146,15 @@ def merge_splits(splits):
 
 
 def get_chain():
+    if "retriever" not in st.session_state:
+        st.session_state.retriever = get_retriever()
+
+    if "prompt_template" not in st.session_state:
+        st.session_state.prompt_template = get_prompt_template()
+
     rag_chain = (
-        {"context": get_retriever() | merge_splits, "question": RunnablePassthrough()}
-        | get_prompt_template()
+        {"context": st.session_state.retriever | merge_splits, "question": RunnablePassthrough()}
+        | st.session_state.prompt_template
         | get_llm()
         | StrOutputParser()
     )
@@ -150,9 +162,11 @@ def get_chain():
 
 
 def get_llm():
+    model_name = st.session_state.llm_model
+    if model_name in st.session_state.llm_models_cache:
+        return st.session_state.llm_models_cache[model_name]
     llm = HuggingFaceEndpoint(
-        # repo_id="meta-llama/Meta-Llama-3-8B-Instruct",
-        repo_id="mistralai/Mistral-7B-Instruct-v0.3",
+        repo_id=LLM_MODELS_REPO[st.session_state.llm_model],
         huggingfacehub_api_token=os.environ["HF_API_KEY"],
         task="text-generation",
         streaming=True,
@@ -161,6 +175,7 @@ def get_llm():
         # top_p=0.95,
         # repetition_penalty=1.0,
     )
+    st.session_state.llm_models_cache[model_name] = llm
     return llm
 
 
@@ -244,8 +259,32 @@ def main():
         run_upload()
         return
 
+    if "llm_model" not in st.session_state:
+        st.session_state.llm_model = list(LLM_MODELS_REPO)[0]
+
+    if "llm_models_cache" not in st.session_state:
+        st.session_state.llm_models_cache = {}
+
     if "rag_chain" not in st.session_state:
         st.session_state.rag_chain = get_chain()
+
+    # page side bar (model selection options)
+    def llm_model_changed_callback():
+        st.session_state.rag_chain = get_chain()
+
+    st.sidebar.markdown(
+        "<span style='font-size: 20px;font-weight: bold;'>Select LLM Model:</span>",
+        unsafe_allow_html=True,
+    )
+
+    st.sidebar.radio(
+        "Select LLM Model:",
+        list(LLM_MODELS_REPO),
+        index=0,
+        on_change=llm_model_changed_callback,
+        key="llm_model",
+        label_visibility="hidden",
+    )
 
     if "messages" not in st.session_state:
         st.session_state.messages = []
