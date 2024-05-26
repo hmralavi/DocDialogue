@@ -1,0 +1,42 @@
+.stChatMessage {
+    background-color: transparent;
+}
+
+.message-assistant {
+    background-color: rgba(217, 167, 0, 0.3);
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+
+.message-user {
+    background-color: rgba(150, 150, 150, 0.3);
+    padding: 10px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+}
+
+.github-link {
+    display: inline-block;
+    padding: 10px 20px;
+    background-color: #333;
+    border-radius: 10px;
+    transition: background-color 0.3s ease;
+    position:absolute;
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+    text-decoration: none;
+    color: white !important;
+    top: 83vh;
+}
+
+.github-link:hover {
+    background-color: #555;
+    text-decoration: none;
+}
+
+.github-link svg {
+    vertical-align: middle;
+    margin-right: 8px;
+}
