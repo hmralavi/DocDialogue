@@ -1,6 +1,7 @@
 """
-TODO: implementing chat history https://python.langchain.com/v0.2/docs/tutorials/qa_chat_history/
-TODO: improve web inputs. maybe using bs4 more properly?
+TODO: chat history implemented according to https://python.langchain.com/v0.2/docs/tutorials/qa_chat_history/
+    However, I think max_new_token for the history_chain llm should be decreased.
+    also, make some faulty formulated prompt when there is no history yet.
 TODO: llama doesn't answer properly. maybe modify the prompt?
 """
 
@@ -19,9 +20,10 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from langchain_chroma import Chroma
 from langchain_core.runnables import RunnablePassthrough
-from langchain_core.prompts import ChatPromptTemplate, PromptTemplate
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_huggingface.llms import HuggingFaceEndpoint
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.messages import AIMessage, HumanMessage
 
 import os
 import time
@@ -29,8 +31,8 @@ import random
 import shutil
 from dotenv import load_dotenv
 
-AI_MSG_TAG = "assistant"
-USER_MSG_TAG = "user"
+AI_MSG_TAG = "ai"
+USER_MSG_TAG = "human"
 
 LLM_MODELS_REPO = {
     "Mistral-7B-Instruct-v0.3": "mistralai/Mistral-7B-Instruct-v0.3",
@@ -124,7 +126,7 @@ def get_retriever():
         persist_directory=os.path.join(st.session_state.tmp_folder, "chroma"),
     )
 
-    return vectordb.as_retriever(search_type="similarity", search_kwargs={"k": 3})
+    return vectordb.as_retriever(search_type="similarity", search_kwargs={"k": 5})
 
 
 def insert_message(role: str, msg: str, display=True):
@@ -170,13 +172,7 @@ def merge_splits(splits):
     return "\n\n".join(f"{i}.{s.page_content}" for i, s in enumerate(splits))
 
 
-def get_chain():
-    if "retriever" not in st.session_state:
-        st.session_state.retriever = get_retriever()
-
-    if "prompt_template" not in st.session_state:
-        st.session_state.prompt_template = get_prompt_template()
-
+def get_rag_chain():
     rag_chain = (
         {"context": st.session_state.retriever | merge_splits, "question": RunnablePassthrough()}
         | st.session_state.prompt_template
@@ -184,6 +180,29 @@ def get_chain():
         | StrOutputParser()
     )
     return rag_chain
+
+
+def get_history_aware_chain():
+    contextualize_q_system_prompt = (
+        "Given a chat history and the latest user question "
+        "which might reference context in the chat history, "
+        "formulate a standalone question which can be understood "
+        "without the chat history. Do NOT answer the question, "
+        "just reformulate the question if needed and otherwise return the question as is."
+    )
+
+    contextualize_q_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", contextualize_q_system_prompt),
+            ("placeholder", "{chat_history}"),
+            ("human", "the question: {question}"),
+            ("ai", "Reformulated question:"),
+        ]
+    )
+
+    history_chain = contextualize_q_prompt | get_llm() | StrOutputParser()
+
+    return history_chain
 
 
 def get_llm():
@@ -205,44 +224,41 @@ def get_llm():
 
 
 def get_prompt_template():
-    prompt1 = ChatPromptTemplate.from_messages(
-        [
-            (
-                "human",
-                """
-                You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.
-                Question: {question}
-                Context: {context}
-                Answer:
-                """,
-            )
-        ]
-    )
-
-    prompt2 = ChatPromptTemplate.from_messages(
+    prompt = ChatPromptTemplate.from_messages(
         [
             (
                 "system",
-                "You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.",
+                """
+                You are an assistant for question-answering tasks.
+                Use the following pieces of retrieved context to answer the question.
+                If you don't know the answer, just say that you don't know.
+                Use three sentences maximum and keep the answer concise.
+                Context: {context}
+                """,
             ),
-            (
-                "human",
-                "Question: {question} \n Context: {context} \n Answer:",
-            ),
+            ("human", "Question: {question}"),
             ("ai", "Answer:"),
         ]
     )
 
-    prompt3 = PromptTemplate.from_template(
-        """
-        You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. If you don't know the answer, just say that you don't know. Use three sentences maximum and keep the answer concise.
-        Question: {question}
-        Context: {context}
-        Answer:
-        """
-    )
+    return prompt
 
-    return prompt2
+
+def get_chat_history():
+    chat_history = []
+    # if there is less than 3 messages, it means that the first message is ai's and the second one is user's fresh message.
+    # so there is no chat history between ai and user yet.
+    # so we return an empty list as the chat history
+    if len(st.session_state.messages) < 3:
+        return chat_history
+    for msg in st.session_state.messages[:-1]:
+        if msg["role"] == AI_MSG_TAG:
+            chat_history.append(AIMessage(content=msg["content"]))
+        elif msg["role"] == USER_MSG_TAG:
+            chat_history.append(HumanMessage(content=msg["content"]))
+        else:
+            raise ValueError(f"role {msg['role']} is not valid.")
+    return chat_history
 
 
 def main():
@@ -298,12 +314,20 @@ def main():
     if "llm_models_cache" not in st.session_state:
         st.session_state.llm_models_cache = {}
 
+    if "retriever" not in st.session_state:
+        st.session_state.retriever = get_retriever()
+
+    if "prompt_template" not in st.session_state:
+        st.session_state.prompt_template = get_prompt_template()
+
     if "rag_chain" not in st.session_state:
-        st.session_state.rag_chain = get_chain()
+        st.session_state.history_aware_chain = get_history_aware_chain()
+        st.session_state.rag_chain = get_rag_chain()
 
     # page side bar (model selection options)
     def llm_model_changed_callback():
-        st.session_state.rag_chain = get_chain()
+        st.session_state.history_aware_chain = get_history_aware_chain()
+        st.session_state.rag_chain = get_rag_chain()
 
     st.sidebar.markdown(
         "<span style='font-size: 36px;font-weight: bold;'>Options:</span>",
@@ -331,7 +355,12 @@ def main():
     prompt = get_user_prompt()
 
     if prompt:
-        response_stream = st.session_state.rag_chain.stream(prompt)
+        reformulated_prompt = st.session_state.history_aware_chain.invoke(
+            {"question": prompt, "chat_history": get_chat_history()}
+        )
+        print("-----reformulated prompt-------")
+        print(reformulated_prompt)
+        response_stream = st.session_state.rag_chain.stream(reformulated_prompt)
         insert_message_stream(response_stream)
 
 
