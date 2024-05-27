@@ -35,8 +35,9 @@ AI_MSG_TAG = "ai"
 USER_MSG_TAG = "human"
 
 LLM_MODELS_REPO = {
+    "Mixtral-8x7B-Instruct-v0.1": "mistralai/Mixtral-8x7B-Instruct-v0.1",
     "Mistral-7B-Instruct-v0.3": "mistralai/Mistral-7B-Instruct-v0.3",
-    "Meta-Llama-3-8B-Instruct": "meta-llama/Meta-Llama-3-8B-Instruct",
+    # "Meta-Llama-3-8B-Instruct": "meta-llama/Meta-Llama-3-8B-Instruct",
     "google/gemma-1.1-7b-it": "google/gemma-1.1-7b-it",
 }
 
@@ -184,19 +185,19 @@ def get_rag_chain():
 
 def get_history_aware_chain():
     contextualize_q_system_prompt = (
-        "Given a chat history and the latest user question "
-        "which might reference context in the chat history, "
-        "formulate a standalone question which can be understood "
+        "You are given a chat history and the last user question "
+        "which might reference context in the chat history. "
+        "You have to formulate a standalone question which can be understood "
         "without the chat history. Do NOT answer the question, "
-        "just reformulate the question if needed and otherwise return the question as is."
+        "just reformulate the last question if needed and otherwise return the question as is."
     )
 
     contextualize_q_prompt = ChatPromptTemplate.from_messages(
         [
             ("system", contextualize_q_system_prompt),
             ("placeholder", "{chat_history}"),
-            ("human", "the question: {question}"),
-            ("ai", "Reformulated question:"),
+            ("human", "the last question: {question}"),
+            ("ai", "Reformulated last question:"),
         ]
     )
 
@@ -215,7 +216,7 @@ def get_llm():
         task="text-generation",
         streaming=True,
         # temperature=0.9,
-        # max_new_tokens=512,
+        max_new_tokens=700,
         # top_p=0.95,
         # repetition_penalty=1.0,
     )
@@ -355,12 +356,13 @@ def main():
     prompt = get_user_prompt()
 
     if prompt:
-        reformulated_prompt = st.session_state.history_aware_chain.invoke(
-            {"question": prompt, "chat_history": get_chat_history()}
-        )
-        print("-----reformulated prompt-------")
-        print(reformulated_prompt)
-        response_stream = st.session_state.rag_chain.stream(reformulated_prompt)
+        if len(st.session_state.messages) >= 3:
+            prompt = st.session_state.history_aware_chain.invoke(
+                {"question": prompt, "chat_history": get_chat_history()}
+            )
+            print("-----reformulated prompt-------")
+            print(prompt)
+        response_stream = st.session_state.rag_chain.stream(prompt)
         insert_message_stream(response_stream)
 
 
